@@ -1,72 +1,70 @@
 const puppeteer = require('puppeteer');
-const Excel = require('excel4node');
+const fs = require('fs');
 const xlsx = require('xlsx');
 
-async function scrapeSnapdeal(bookName, isbn) {
-  const browser = await puppeteer.launch();
-  const page = await browser.newPage();
-  
-  // Navigate to Snapdeal search results page
-  await page.goto(`https://www.snapdeal.com/search?keyword=${bookName}`);
-  
-  // Wait for search results to load
-  await page.waitForSelector('.product-tuple-description');
+// Function to read ISBN values from the Excel file
+async function readISBNFromExcel(filePath) {
+    const workbook = xlsx.readFile(filePath);
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
 
-  // Extract available author, price, URL, publisher, and in stock information
-  const data = await page.evaluate(() => {
-    const product = document.querySelector('.product-tuple-description');
+    // Assuming ISBN is in the second column (column B)
+    const isbnColumn = 'C';
+    const isbnValues = [];
 
-    const url = product.querySelector('a').href;
-    const price = product.querySelector('.product-price').innerText;
-    const author = product.querySelector('.product-seller-name').innerText;
-    const publisher = product.querySelector('.product-publisher').innerText;
-    const inStock = product.querySelector('.availability').innerText;
+    let rowIndex = 2; // Start from row 2 (assuming row 1 is header)
+    let cell = worksheet[`${isbnColumn}${rowIndex}`];
+    while (cell) {
+        isbnValues.push(cell.v);
+        rowIndex++;
+        cell = worksheet[`${isbnColumn}${rowIndex}`];
+    }
 
-    return { url, price, author, publisher, inStock };
-  });
-
-  await browser.close();
-
-  return data;
+    return isbnValues;
 }
 
-async function generateExcel(inputFileName, outputFileName) {
-  // Read input Excel file
-  const workbook = xlsx.readFile(inputFileName);
-  const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-  const data = xlsx.utils.sheet_to_json(worksheet);
+// Function to search for a book on Snapdeal
+async function searchOnSnapdeal(page, isbn) {
+    try {
+        // Navigate to the Snapdeal website
+        await page.goto('https://www.snapdeal.com/');
 
-  // Create a new Excel workbook for output
-  const outputWorkbook = new Excel.Workbook();
-  const outputWorksheet = outputWorkbook.addWorksheet('Sheet1');
-  
-  // Add headers
-  outputWorksheet.cell(1, 1).string('Book Name');
-  outputWorksheet.cell(1, 2).string('ISBN');
-  outputWorksheet.cell(1, 3).string('URL');
-  outputWorksheet.cell(1, 4).string('Price');
-  outputWorksheet.cell(1, 5).string('Author');
-  outputWorksheet.cell(1, 6).string('Publisher');
-  outputWorksheet.cell(1, 7).string('In Stock');
+        // Find the search input field and type the ISBN
+        await page.type('#inputValEnter', isbn);
 
-  // Scrape Snapdeal for each book
-  for (let i = 0; i < data.length; i++) {
-    const { bookName, isbn } = data[i];
-    const { url, price, author, publisher, inStock } = await scrapeSnapdeal(bookName, isbn);
+        // Find and click the search button
+        await page.click('.searchTextSpan');
 
-    // Write scraped data to output Excel file
-    outputWorksheet.cell(i + 2, 1).string(bookName);
-    outputWorksheet.cell(i + 2, 2).string(isbn);
-    outputWorksheet.cell(i + 2, 3).string(url);
-    outputWorksheet.cell(i + 2, 4).string(price);
-    outputWorksheet.cell(i + 2, 5).string(author);
-    outputWorksheet.cell(i + 2, 6).string(publisher);
-    outputWorksheet.cell(i + 2, 7).string(inStock);
-  }
-
-  // Write output Excel file
-  await outputWorkbook.write(outputFileName);
+        // Wait for the search results to load
+        await page.waitForSelector('.searchResult');
+    } catch (error) {
+        console.error('Error searching on Snapdeal:', error);
+    }
 }
 
-// Usage
-generateExcel('input.xlsx', 'output.xlsx');
+// Main function
+async function main() {
+    try {
+        // Load ISBN values from the Excel file
+        const isbnValues = await readISBNFromExcel('input.xlsx');
+
+        // Launch Puppeteer and create a new page
+        const browser = await puppeteer.launch({ headless: false });
+        const page = await browser.newPage();
+
+        // Loop through each ISBN and search on Snapdeal
+        for (const isbn of isbnValues) {
+            console.log('Searching for ISBN:', isbn);
+            await searchOnSnapdeal(page, isbn);
+            // Add your scraping logic here
+            // You can extract book data from the search results page
+        }
+
+        // Close the browser
+        await browser.close();
+    } catch (error) {
+        console.error('An error occurred:', error);
+    }
+}
+
+// Call the main function
+main();
