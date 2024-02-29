@@ -36,19 +36,9 @@ async function searchOnSnapdeal(page, book) {
             return;
         }
 
-        const pincodeInput = await page.$('#sd-pincode');
-        if (pincodeInput) {
-            await page.type('#sd-pincode', pincode.toString());
-            await page.click('#locationSubmit');
-            // Wait for the pincode to be updated
-            await page.waitForTimeout(2000); // Adjust timeout as needed
-        }
 
-        // Extract titles and prices of search results
-        const searchResultTitles = await page.$$eval('.searchResult .product-desc-rating', (elements) =>
-            elements.map(e => e.textContent.trim())
-        );
-        const searchResultPrices = await page.$$eval('.searchResult .product-price', (elements) =>
+        // Extract prices of search results
+        const searchResultPrices = await page.$$eval('#display-price', (elements) =>
             elements.map(e => parseFloat(e.textContent.replace(/[^\d.]/g, '')))
         );
 
