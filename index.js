@@ -38,7 +38,7 @@ async function searchOnSnapdeal(page, book) {
 
 
         // Extract prices of search results
-        const searchResultPrices = await page.$$eval('#display-price', (elements) =>
+        const searchResultPrices = await page.$$eval('.searchResult .product-price', (elements) =>
             elements.map(e => parseFloat(e.textContent.replace(/[^\d.]/g, '')))
         );
 
