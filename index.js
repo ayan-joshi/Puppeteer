@@ -26,7 +26,7 @@ async function searchOnSnapdeal(page, book) {
         await page.click('.searchTextSpan');
 
         // Wait for the search results to load
-        await page.waitForSelector('.searchResult');
+        await page.waitForSelector('.searchResult', { timeout: 60000});
 
         // Check if any search results are found
         const searchResults = await page.$$('.searchResult .product-desc-rating');
@@ -36,9 +36,20 @@ async function searchOnSnapdeal(page, book) {
             return;
         }
 
-        // Extract titles of search results
+        const pincodeInput = await page.$('#sd-pincode');
+        if (pincodeInput) {
+            await page.type('#sd-pincode', pincode.toString());
+            await page.click('#locationSubmit');
+            // Wait for the pincode to be updated
+            await page.waitForTimeout(2000); // Adjust timeout as needed
+        }
+
+        // Extract titles and prices of search results
         const searchResultTitles = await page.$$eval('.searchResult .product-desc-rating', (elements) =>
             elements.map(e => e.textContent.trim())
+        );
+        const searchResultPrices = await page.$$eval('.searchResult .product-price', (elements) =>
+            elements.map(e => parseFloat(e.textContent.replace(/[^\d.]/g, '')))
         );
 
         // Find the best match for the book title
@@ -50,16 +61,18 @@ async function searchOnSnapdeal(page, book) {
         if (matchScore >= 0.9) {
             // Update the book with search result details
             const searchResult = searchResults[matchIndex];
-            const price = await searchResult.$eval('.product-price', element => element.textContent.trim());
+            const price = searchResultPrices[matchIndex];
             const author = await searchResult.$eval('.product-seller-name', element => element.textContent.trim());
             const publisher = await searchResult.$eval('.product-publisher', element => element.textContent.trim());
             const inStock = await searchResult.$eval('.availability', element => element.textContent.trim());
+            const url = await searchResult.$eval('a', element => element.href);
 
             book.Found = 'Yes';
             book.Price = price;
             book.Author = author;
             book.Publisher = publisher;
             book['In Stock'] = inStock;
+            book.URL = url;
         } else {
             // Update the "Found" column status to "No" in Excel
             book.Found = 'No';
@@ -83,13 +96,13 @@ async function main() {
         for (const book of books) {
             console.log('Searching for book:', book['Book Title']);
             await searchOnSnapdeal(page, book);
-        }
 
-        // Write the updated book data back to the Excel file
-        const updatedWorkbook = xlsx.utils.book_new();
-        const updatedWorksheet = xlsx.utils.json_to_sheet(books);
-        xlsx.utils.book_append_sheet(updatedWorkbook, updatedWorksheet);
-        xlsx.writeFile(updatedWorkbook, 'output.xlsx');
+            // Write the updated book data back to the Excel file
+            const updatedWorkbook = xlsx.utils.book_new();
+            const updatedWorksheet = xlsx.utils.json_to_sheet(books);
+            xlsx.utils.book_append_sheet(updatedWorkbook, updatedWorksheet);
+            xlsx.writeFile(updatedWorkbook, 'output.xlsx');
+        }
 
         // Close the browser after all searches are completed
         await browser.close();
