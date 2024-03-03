@@ -23,7 +23,6 @@ function findBestMatch(title, titles, prices) {
     return bestMatch;
 }
 
-// Function to search for a book on Snapdeal
 async function searchOnSnapdeal(page, book) {
     try {
         // Navigate to the Snapdeal website
@@ -38,7 +37,7 @@ async function searchOnSnapdeal(page, book) {
         // Wait for the search results to load
         await page.waitForSelector('.product-tuple-listing', { timeout: 60000 });
 
-        // Check if any search results are found
+        // Extract prices, links, authors, and publishers of search results
         const searchResults = await page.$$('.product-tuple-listing');
         if (searchResults.length === 0) {
             // Update the "Found" column status to "No" in Excel
@@ -46,24 +45,30 @@ async function searchOnSnapdeal(page, book) {
             return;
         }
 
-        // Extract prices and in-stock status of search results
         const searchResultPrices = await page.$$eval('.product-tuple-listing .product-price', elements =>
             elements.map(e => parseFloat(e.textContent.replace(/[^\d.]/g, '')))
         );
-      
+        const searchResultLinks = await page.$$eval('.product-tuple-image a', elements =>
+            elements.map(e => e.href)
+        );
+        const searchResultAuthors = await page.$$eval('.product-author-name', elements =>
+            elements.map(e => e.textContent.trim())
+        );
+        const searchResultPublishers = await page.$$eval('.product-tuple-description .product-publisher', elements =>
+            elements.map(e => e.textContent.trim())
+        );
 
-        // Find the lowest price book index
-        const lowestPriceIndex = searchResultPrices.indexOf(Math.min(...searchResultPrices));
+        // Find the index of the first upcoming book
+        const upcomingBookIndex = searchResultPrices.findIndex(price => price > 0);
 
-       
-        // Click on the lowest price book to open its page
-        const bookLink = await searchResults[lowestPriceIndex].$eval('.product-tuple-image a', element => element.href);
+        // Click on the first upcoming book to open its page
+        const bookLink = searchResultLinks[upcomingBookIndex];
         await page.goto(bookLink);
 
         // Extract book information
         const price = await page.$eval('.pdp-final-price', element => element.textContent.trim());
-        const author = await page.$eval('.list-cicrle-cont', element => element.textContent.trim());
-        const publisher = await page.$eval('.list-cicrle-cont', element => element.textContent.trim());
+        const author = searchResultAuthors[upcomingBookIndex];
+        const publisher = searchResultPublishers[upcomingBookIndex];
         const url = page.url();
 
         // Update the book with scraped data
@@ -73,11 +78,11 @@ async function searchOnSnapdeal(page, book) {
         book.Publisher = publisher;
         book.URL = url;
         book['In Stock'] = 'Yes';
-
     } catch (error) {
         console.error('Error searching on Snapdeal:', error);
     }
 }
+
 
 
 
@@ -113,4 +118,3 @@ async function main() {
 
 // Call the main function
 main();
-
