@@ -54,9 +54,7 @@ async function searchOnSnapdeal(page, book) {
         const searchResultAuthors = await page.$$eval('.product-author-name', elements =>
             elements.map(e => e.textContent.trim())
         );
-        const searchResultPublishers = await page.$$eval('.product-tuple-description .product-publisher', elements =>
-            elements.map(e => e.textContent.trim())
-        );
+        
 
         // Find the index of the first upcoming book
         const upcomingBookIndex = searchResultPrices.findIndex(price => price > 0);
@@ -64,6 +62,10 @@ async function searchOnSnapdeal(page, book) {
         // Click on the first upcoming book to open its page
         const bookLink = searchResultLinks[upcomingBookIndex];
         await page.goto(bookLink);
+
+        const searchResultPublishers = await page.$$eval('#id-tab-container > div > div.spec-section.expanded.highlightsTileContent > div.spec-body.p-keyfeatures > ul > li:nth-child(3)', elements =>
+            elements.map(e => e.textContent.trim())
+        );
 
         // Extract book information
         const price = await page.$eval('.pdp-final-price', element => element.textContent.trim());
