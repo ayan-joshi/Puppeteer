@@ -18,10 +18,22 @@ userIds.forEach(userId => {
 
     // Extracting the username
     const username = user.username;
-    
+
+    // Check if user data is fetched
+    if (!user || !username) {
+        outputData[username] = ['User data not fetched'];
+        return; // Skip to the next user
+    }
+
     // Extracting the video URLs
-    const videoUrls = videos.map(video => `https://triller.co/@${username}/video/${video.video_uuid}`);
-    
+    const videoUrls = videos.map(video => {
+        // Check if video data is fetched
+        if (!video || !video.video_uuid) {
+            return 'Video data not fetched';
+        }
+        return `https://triller.co/@${username}/video/${video.video_uuid}`;
+    });
+
     // Store the username and video URLs in the outputData
     outputData[username] = videoUrls;
 });
