@@ -1,45 +1,84 @@
-const puppeteer = require('puppeteer');
+var https = require('follow-redirects').https;
+var fs = require('fs');
 
-async function scrape(url) {
-    const browser = await puppeteer.launch({ headless: false });
-    const page = await browser.newPage();
-    
-    // Navigate to the page
-    await page.goto(url, { waitUntil: 'networkidle2' });
-
-    // Function to scroll the page to the bottom
-    const scrollPageToBottom = async () => {
-        await page.evaluate(() => {
-            window.scrollTo(0, document.body.scrollHeight);
-        });
+// Function to fetch data for a given page
+function fetchDataForPage(page) {
+    var options = {
+        'method': 'GET',
+        'hostname': 'social.triller.co',
+        'path': `/v1.5/api/music/video/fresh?page=${page}&song_id=6ac26199-cd40-4f7d-b504-3fff7df4cafe&limit=50`,
+        'headers': {},
+        'maxRedirects': 20
     };
 
-    // Scroll the page to the bottom
-    let previousHeight = 0;
-    while (true) {
-        await scrollPageToBottom();
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for 2 seconds for content to load
-        const newHeight = await page.evaluate(() => document.body.scrollHeight);
-        if (newHeight === previousHeight) {
-            break; // Exit the loop if no more content is loaded
-        }
-        previousHeight = newHeight;
-    }
+    var req = https.request(options, function (res) {
+        console.log('Response status code:', res.statusCode);
 
-    // Scrape video URLs with the common part "/video"
-    const videoUrls = await page.evaluate(() => {
-        const urls = [];
-        const videoElements = document.querySelectorAll('a[href*="/video"]');
-        videoElements.forEach(video => {
-            urls.push(video.href);
+        var chunks = [];
+
+        res.on("data", function (chunk) {
+            chunks.push(chunk);
         });
-        return urls;
+
+        res.on("end", function (chunk) {
+            var body = Buffer.concat(chunks);
+            try {
+                var jsonData = JSON.parse(body.toString());
+                processData(jsonData, page);
+            } catch (error) {
+                console.error('Error parsing JSON:', error);
+                console.log('Response body:', body.toString());
+            }
+        });
+
+        res.on("error", function (error) {
+            console.error('Error:', error);
+        });
     });
 
-    console.log('Video URLs:', videoUrls);
-    
-    await browser.close(); // Close the browser
+    req.end();
 }
 
-// Call the scrape function with the URL
-scrape('https://triller.co/tracks/6ac26199-cd40-4f7d-b504-3fff7df4cafe');
+// Function to process fetched data
+function processData(data, page) {
+    const users = data.users;
+    const videos = data.videos;
+    const outputData = {};
+
+    // Fetch video_uuid for each user
+    Object.keys(users).forEach(userId => {
+        const user = users[userId];
+        const username = user.username;
+
+        const userVideos = videos.filter(video => video.user_id === parseInt(userId));
+        const userVideoUuids = userVideos.map(video => video.video_uuid);
+
+        outputData[username] = userVideoUuids;
+    });
+
+    // Create video URLs and update outputData
+    Object.keys(outputData).forEach(username => {
+        outputData[username] = outputData[username].map(videoUuid => {
+            return `https://triller.co/@${username}/video/${videoUuid}`;
+        });
+    });
+
+    // Stringify the outputData
+    const outputJson = JSON.stringify(outputData, null, 2);
+
+    // Write to output.json with page number header
+    if (page === 1) {
+        // If it's the first page, overwrite the file
+        fs.writeFileSync('output.json', `Page ${page}:\n${outputJson}\n\n`);
+    } else {
+        // If it's not the first page, append to the file
+        fs.appendFileSync('output.json', `\nPage ${page}:\n${outputJson}\n\n`);
+    }
+
+    console.log(`Data for page ${page} stored in output.json`);
+}
+
+// Fetch data for pages 1 to 5
+for (let page = 1; page <= 5; page++) {
+    fetchDataForPage(page);
+}
