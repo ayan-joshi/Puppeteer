@@ -1,38 +1,61 @@
-const puppeteer = require('puppeteer');
+const https = require('follow-redirects').https;
+const fs = require('fs');
 
-async function scrape(url) {
-    const browser = await puppeteer.launch({ headless: false });
-    const page = await browser.newPage();
-    
-    // Navigate to the page
-    await page.goto(url, { waitUntil: 'networkidle2' });
+const options = {
+    method: 'GET',
+    hostname: 'www.hipi.co.in',
+    path: '/_next/data/221b61f2bb25f7a54d514a26772f12a795492f5a/en-in/sound/abf409cf-2e90-4a2d-ab1d-b4a483c2327f.json?item=abf409cf-2e90-4a2d-ab1d-b4a483c2327f',
+    headers: {},
+    maxRedirects: 20
+};
 
-    // Function to scroll the page
-    const scrollPage = async () => {
-        await page.evaluate(() => {
-            window.scrollBy(0, window.innerHeight); // Scroll down by window height
-        });
-    };
+const req = https.request(options, function (res) {
+    let chunks = '';
 
-    // Scroll the page every 2 seconds
-    const scrollInterval = setInterval(scrollPage, 2000);
+    res.on('data', function (chunk) {
+        chunks += chunk;
+    });
 
-    // Wait for some time for the page to load and scrape video URLs
-    setTimeout(async () => {
-        const videoUrls = await page.evaluate(() => {
-            const urls = [];
-            const videoElements = document.querySelectorAll('a[href*="single-video"]');
-            videoElements.forEach(video => {
-                urls.push(video.href);
-            });
-            return urls;
-        });
-        console.log('Video URLs:', videoUrls);
-        clearInterval(scrollInterval); // Stop scrolling
-        await browser.close(); // Close the browser
-    }, 10000); // Adjust the time according to your page load time
+    res.on('end', function () {
+        try {
+            const jsonData = JSON.parse(chunks);
+            processData(jsonData);
+        } catch (error) {
+            console.error('Error parsing JSON:', error);
+            console.log('Response body:', chunks);
+        }
+    });
+
+    res.on('error', function (error) {
+        console.error('Error:', error);
+    });
+});
+
+req.end();
+
+function processData(data) {
+    const { videoArray } = data?.pageProps || {};
+
+    if (!videoArray || !Array.isArray(videoArray) || videoArray.length === 0) {
+        console.error('No video data found in the response.');
+        return;
+    }
+
+    const outputData = [];
+
+    videoArray.forEach((video, index) => {
+        const { content_id, soundId, userName } = video || {};
+        if (!content_id || !soundId || !userName) {
+            console.error(`Missing data for video at index ${index}. Skipping.`);
+            return;
+        }
+
+        const newUrl = `https://www.hipi.co.in/single-video/${content_id}?feed=sound&keyword=${soundId}&index=${index}`;
+        outputData.push({ username: userName, url: newUrl });
+    });
+
+    // Write to output1.json
+    fs.writeFileSync('output1.json', JSON.stringify(outputData, null, 2));
+
+    console.log('Data stored in output1.json');
 }
-
-// Call the scrape function with the URL
-scrape('https://www.hipi.co.in/sound/be9600b1-2d7c-48df-9484-8b07e505c1de');
-
