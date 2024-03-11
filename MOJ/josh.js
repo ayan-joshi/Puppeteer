@@ -7,38 +7,28 @@ async function scrape(url) {
     // Navigate to the page
     await page.goto(url, { waitUntil: 'networkidle2' });
 
-    // Function to scroll the page to the bottom
-    const scrollPageToBottom = async () => {
-        await page.evaluate(() => {
-            window.scrollTo(0, document.body.scrollHeight);
-        });
-    };
+    // Wait for the thumbnail element to be present
+    await page.waitForSelector('.thumbnail-selector img');
 
-    // Scroll the page to the bottom
-    let previousHeight = 0;
-    while (true) {
-        await scrollPageToBottom();
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for 2 seconds for content to load
-        const newHeight = await page.evaluate(() => document.body.scrollHeight);
-        if (newHeight === previousHeight) {
-            break; // Exit the loop if no more content is loaded
-        }
-        previousHeight = newHeight;
-    }
-
-    // Scrape video URLs with the common part "https://share.myjosh.in/content"
-    const videoUrls = await page.evaluate(() => {
-        const urls = [];
-        const videoElements = document.querySelectorAll('a[href*="share.myjosh.in/content"]');
-        videoElements.forEach(video => {
-            urls.push(video.href);
-        });
-        return urls;
+    // Get the URL of the thumbnail
+    const thumbnailUrl = await page.evaluate(() => {
+        const thumbnailElement = document.querySelector('.thumbnail-selector img');
+        return thumbnailElement.src;
     });
 
-    console.log('Video URLs:', videoUrls);
-    
-    await browser.close(); // Close the browser
+    // Click on the thumbnail to navigate to the associated URL
+    await page.click('.');
+
+    // Wait for navigation to complete
+    await page.waitForNavigation({ waitUntil: 'networkidle2' });
+
+    // Get the URL of the page after clicking the thumbnail
+    const clickedUrl = page.url();
+
+    console.log('Thumbnail URL:', thumbnailUrl);
+    console.log('Clicked URL:', clickedUrl);
+
+    await browser.close(); // Close the browser after scraping
 }
 
 // Call the scrape function with the URL
