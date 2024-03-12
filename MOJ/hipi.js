@@ -1,4 +1,5 @@
 const puppeteer = require('puppeteer');
+const fs = require('fs');
 
 async function scrape(url) {
     const browser = await puppeteer.launch({ headless: false });
@@ -14,33 +15,44 @@ async function scrape(url) {
         });
     };
 
-    // Scroll the page every 2 seconds
-    const scrollInterval = setInterval(scrollPage, 2000);
+    // Keep track of previous scroll height to detect when we've reached the bottom
+    let prevScrollHeight = 0;
 
-    let prevHeight = 0;
-
-    // Check for page height change and stop scrolling when it remains constant
-    const checkPageHeight = setInterval(async () => {
-        const currentHeight = await page.evaluate(() => document.body.scrollHeight);
-        if (currentHeight === prevHeight) {
-            clearInterval(scrollInterval); // Stop scrolling
-            clearInterval(checkPageHeight); // Stop checking page height
-            // Scrape video URLs
-            const videoUrls = await page.evaluate(() => {
-                const urls = [];
-                const videoElements = document.querySelectorAll('a[href*="single-video"]');
-                videoElements.forEach(video => {
-                    urls.push(video.href);
-                });
-                return urls;
-            });
-            console.log('Video URLs:', videoUrls);
-            await browser.close(); // Close the browser
-        } else {
-            prevHeight = currentHeight;
+    try {
+        while (true) {
+            // Scroll the page
+            await scrollPage();
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
+            // Get the current scroll height
+            const currentScrollHeight = await page.evaluate(() => document.body.scrollHeight);
+            // Check if we've reached the bottom of the page
+            if (currentScrollHeight === prevScrollHeight) {
+                break; // Stop scrolling if no additional content is loaded
+            }
+            // Update the previous scroll height
+            prevScrollHeight = currentScrollHeight;
         }
-    }, 5000); // Check every 5 seconds for page height change
+
+        // Scrape video URLs
+        const videoUrls = await page.evaluate(() => {
+            const urls = [];
+            const videoElements = document.querySelectorAll('a[href*="single-video"]');
+            videoElements.forEach(video => {
+                urls.push(video.href);
+            });
+            return urls;
+        });
+        console.log('Video URLs:', videoUrls);
+
+        // Write video URLs to a JSON file
+        fs.writeFileSync('output1.json', JSON.stringify(videoUrls, null, 2));
+        console.log('Video URLs saved to output1.json');
+    } catch (error) {
+        console.error('Error during scraping:', error);
+    } finally {
+        await browser.close(); // Close the browser
+    }
 }
 
 // Call the scrape function with the URL
-scrape('https://www.hipi.co.in/sound/2291adeb-61d2-4c9b-bb20-86ec0716feb7');
+scrape('https://www.hipi.co.in/sound/27d62c5f-609d-4b85-b8f7-8593da3ca112');
