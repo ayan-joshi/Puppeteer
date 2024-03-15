@@ -79,6 +79,6 @@ function processData(data, page) {
 }
 
 // Fetch data for pages 1 to 5
-for (let page = 1; page <= 5; page++) {
+for (let page = 1; page <= 100; page++) {
     fetchDataForPage(page);
 }
