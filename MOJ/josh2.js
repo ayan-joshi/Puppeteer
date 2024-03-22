@@ -1,39 +1,65 @@
 const puppeteer = require('puppeteer');
 
-(async () => {
-  const browser = await puppeteer.launch();
-  const page = await browser.newPage();
+class JoshScraper {
+    static async run() {
+        const browser = await puppeteer.launch();
+        const page = await browser.newPage();
 
-  // Enable request interception
-  await page.setRequestInterception(true);
+        try {
+            await page.goto('https://share.myjosh.in/audio/77762d66-99e6-4c15-b676-9b74e8c31501');
+            await page.waitForSelector('.imgHolder.blur');
+            await page.click('.imgHolder.blur');
+            await page.waitForNavigation();
 
-  // Navigate to the page
-  await page.goto('https://share.myjosh.in/audio/8899ab03-fd5a-41b7-b5e2-7c64b02955f1');
+            // Recursive function to scrape video URLs from multiple pages
+            const videoUrls = await this.scrapeVideos(page);
 
-  // Define a handler for intercepted requests
-  page.on('request', (request) => {
-    // Check if the request is the POST request we want to intercept
-    if (request.method() === 'POST' && request.url() === 'https://feed.myjosh.in/v1/feed/audio?id=8899ab03-fd5a-41b7-b5e2-7c64b02955f1&page=1&rows=10') {
-      // Continue the request
-      request.continue();
-
-      // Wait for the response
-      request.responded.then(async (response) => {
-        // Access the response data
-        const responseData = await response.json();
-
-        // Extract the share_url from the response
-        const shareUrls = responseData.data.map(item => item.share_url);
-        console.log(shareUrls);
-      });
-    } else {
-      // Continue other requests
-      request.continue();
+            console.log('Video URLs:', videoUrls);
+        } catch (error) {
+            console.error('Error:', error);
+        } finally {
+            await browser.close();
+        }
     }
-  });
 
-  // Wait for a specific amount of time to ensure the POST request is made
-  await new Promise(resolve => setTimeout(resolve, 5000));
+    static async scrapeVideos(page) {
+        // Array to store video URLs
+        let videoUrls = [];
 
-  await browser.close();
-})();
+        // Function to intercept network requests
+        await page.setRequestInterception(true);
+        page.on('request', interceptedRequest => {
+            if (interceptedRequest.url().includes('/v1.5/api/music/video/fresh')) {
+                interceptedRequest.continue();
+            } else {
+                interceptedRequest.abort();
+            }
+        });
+
+        // Function to handle intercepted responses and scrape video URLs
+        page.on('response', async response => {
+            if (response.url().includes('/v1.5/api/music/video/fresh')) {
+                const jsonData = await response.json();
+                const videos = jsonData.videos.map(video => video.short_url);
+                videoUrls.push(...videos);
+            }
+        });
+
+        // Navigate to next page if pagination exists
+        const nextButton = await page.$('.pagination a[aria-label="Next"]');
+        if (nextButton) {
+            await Promise.all([
+                page.waitForNavigation(),
+                page.click('.pagination a[aria-label="Next"]')
+            ]);
+            videoUrls.push(...await this.scrapeVideos(page));
+        }
+
+        return videoUrls;
+    }
+}
+
+module.exports = JoshScraper;
+
+// Example usage
+JoshScraper.run();

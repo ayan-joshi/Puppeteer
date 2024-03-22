@@ -14,7 +14,7 @@
     "exceljs": "^4.4.0",
     "fs": "^0.0.1-security",
     "lodash": "^4.17.21",
-    "puppeteer": "^22.3.0",
+    "puppeteer": "^22.6.0",
     "string-similarity": "^4.0.4",
     "xlsx": "^0.18.5"
   }
