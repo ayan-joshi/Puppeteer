@@ -1,79 +1,61 @@
 const puppeteer = require('puppeteer');
 
-class Josh {
-    static async launchBrowser() {
-        const browser = await puppeteer.launch({ headless: false });
-        return browser;
-    }
+(async () => {
+  const browser = await puppeteer.launch();
+  const page = await browser.newPage();
+  await page.setRequestInterception(true);
 
-    static async scrollPage(page) {
-        await page.evaluate(() => {
-            window.scrollBy(0, window.innerHeight);
-        });
-        await new Promise(resolve => setTimeout(resolve, 2000));
-    }
+  const jsonResponseData = [];
+  const videoUrls = new Set(); // Using a Set to store unique video URLs
 
-    static async extractVideoUrl(page, mainUrl) {
-        const currentUrl = page.url();
-        if (currentUrl.includes('/content/')) {
-            return currentUrl;
-        }
+  page.on('request', async (request) => {
+    const requestedUrl = request.url();
 
-        await page.waitForSelector('.imgHolder.blur');
-        await page.click('.imgHolder.blur');
-        await page.waitForNavigation();
+    // Continue with the request
+    request.continue();
+  });
 
-        const newUrl = page.url();
-        if (newUrl.includes('/content/')) {
-            await page.goto(mainUrl, { waitUntil: 'networkidle2' }); // Navigate back to the main page
-            return newUrl;
-        }
+  page.on('response', async (response) => {
+    const requestedUrl = await response.request().url();
+    if (response.status() === 200 && requestedUrl.endsWith('apiwbody')) {
+      const responseBody = await response.text();
+      try {
+        const jsonData = JSON.parse(responseBody); // Parse the response as JSON
 
-        return null;
-    }
-
-    static async run(url) {
-        const browser = await Josh.launchBrowser();
-        const page = await browser.newPage();
-
-        try {
-            await page.goto(url, { waitUntil: 'networkidle2' });
-
-            let prevScrollHeight = 0;
-            let newThumbnailsFound = true;
-            let scrollCount = 0;
-            const videoLinks = new Set(); // Using a Set to automatically handle duplicates
-
-            while (newThumbnailsFound && scrollCount < 1) {
-                const currentScrollHeight = await page.evaluate(() => document.body.scrollHeight);
-                if (currentScrollHeight === prevScrollHeight) {
-                    newThumbnailsFound = false;
-                    continue;
-                }
-                await Josh.scrollPage(page);
-                prevScrollHeight = currentScrollHeight;
-                scrollCount++;
-
-                const thumbnailElements = await page.$$('.imgHolder.blur');
-                for (const thumbnailElement of thumbnailElements) {
-                    const videoUrl = await Josh.extractVideoUrl(page, url); // Pass the main URL to the extractVideoUrl function
-                    if (videoUrl && !videoLinks.has(videoUrl)) {
-                        videoLinks.add(videoUrl);
-                    }
-                }
+        if (jsonData.data && Array.isArray(jsonData.data)) {
+          for (const item of jsonData.data) {
+            if (item.share_url) {
+              videoUrls.add(item.share_url); // Add unique video URLs to the Set
             }
-
-            console.log('Video Links:', Array.from(videoLinks)); // Convert Set to Array for logging and return
-            return Array.from(videoLinks);
-        } catch (error) {
-            console.error('Error during scraping:', error);
-        } finally {
-            await browser.close();
+          }
         }
+        
+        jsonResponseData.push({ url: requestedUrl, body: responseBody });
+      } catch (error) {
+        console.error('Error parsing JSON response:', error);
+      }
     }
-}
+  });
 
-module.exports = Josh;
+  await page.goto('https://share.myjosh.in/audio/77762d66-99e6-4c15-b676-9b74e8c31501', { timeout: 60000 });
 
-// Example usage:
-Josh.run('https://share.myjosh.in/audio/77762d66-99e6-4c15-b676-9b74e8c31501');
+  // Simulate scrolling to load more content
+  let previousHeight;
+  while (true) {
+    const newHeight = await page.evaluate(() => {
+      window.scrollTo(0, document.body.scrollHeight);
+      return document.body.scrollHeight;
+    });
+
+    if (newHeight === previousHeight) {
+      break; // Exit the loop if scrolling doesn't load more content
+    }
+
+    previousHeight = newHeight;
+    await new Promise(resolve => setTimeout(resolve, 1000));// Wait for 1 second after each scroll
+  }
+
+  await browser.close();
+
+  console.log('Video URLs:', Array.from(videoUrls)); // Log all unique video URLs
+})();
