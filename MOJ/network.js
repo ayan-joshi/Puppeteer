@@ -1,10 +1,11 @@
 const puppeteer = require('puppeteer');
 
 class Josh {
-  static async processRequest(page) {
+  static async processRequest(page, song_id) {
     page.setRequestInterception(true);
 
     const dataArray = [];
+    let srNoCounter = 1;
 
     page.on('request', async (request) => {
       const requestedUrl = request.url();
@@ -20,17 +21,23 @@ class Josh {
         try {
           const jsonData = JSON.parse(responseBody); // Parse the response as JSON
 
+
           if (jsonData.data && Array.isArray(jsonData.data)) {
             for (const item of jsonData.data) {
               if (item.share_url) {
+                let songName = ''; // Variable to store the song name
+                if (item.album_info && item.album_info.name) {
+                  songName = item.album_info.name;
+                }
                 dataArray.push({
-                  song_name: item.name,
+                  sr_no: srNoCounter++,
+                  song_name: songName,
                   video_link: item.share_url,
+                  song_url: song_id, // Include song_id in the object
                   label: 'label', // You can set the label value as needed
                   date: Josh.getFirstDateOfMonth(),
                   analyst: 'bot',
                   app_name: 'Josh',
-                  song_id: item.song_id, // Include song_id in the array object
                 });
               }
             }
@@ -68,8 +75,7 @@ class Josh {
     const formattedMonth = month < 10 ? `0${month}` : month; // Add leading zero if month is single digit
     const formattedDate = `${year}-${formattedMonth}-01`;
     return formattedDate;
-}
-
+  }
 
   static async run(song_id) {
     const browser = await puppeteer.launch();
@@ -78,7 +84,7 @@ class Josh {
     try {
       await page.goto(song_id, { timeout: 60000 });
 
-      const dataArray = await Josh.processRequest(page);
+      const dataArray = await Josh.processRequest(page, song_id); // Pass song_id to processRequest
 
       await Josh.simulateScrolling(page);
 
