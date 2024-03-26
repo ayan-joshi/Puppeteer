@@ -1,65 +1,79 @@
 const puppeteer = require('puppeteer');
 
-class JoshScraper {
-    static async run() {
-        const browser = await puppeteer.launch();
+class Josh {
+    static async launchBrowser() {
+        const browser = await puppeteer.launch({ headless: false });
+        return browser;
+    }
+
+    static async scrollPage(page) {
+        await page.evaluate(() => {
+            window.scrollBy(0, window.innerHeight);
+        });
+        await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    static async extractVideoUrl(page, mainUrl) {
+        const currentUrl = page.url();
+        if (currentUrl.includes('/content/')) {
+            return currentUrl;
+        }
+
+        await page.waitForSelector('.imgHolder.blur');
+        await page.click('.imgHolder.blur');
+        await page.waitForNavigation();
+
+        const newUrl = page.url();
+        if (newUrl.includes('/content/')) {
+            await page.goto(mainUrl, { waitUntil: 'networkidle2' }); // Navigate back to the main page
+            return newUrl;
+        }
+
+        return null;
+    }
+
+    static async run(url) {
+        const browser = await Josh.launchBrowser();
         const page = await browser.newPage();
 
         try {
-            await page.goto('https://share.myjosh.in/audio/77762d66-99e6-4c15-b676-9b74e8c31501');
-            await page.waitForSelector('.imgHolder.blur');
-            await page.click('.imgHolder.blur');
-            await page.waitForNavigation();
+            await page.goto(url, { waitUntil: 'networkidle2' });
 
-            // Recursive function to scrape video URLs from multiple pages
-            const videoUrls = await this.scrapeVideos(page);
+            let prevScrollHeight = 0;
+            let newThumbnailsFound = true;
+            let scrollCount = 0;
+            const videoLinks = new Set(); // Using a Set to automatically handle duplicates
 
-            console.log('Video URLs:', videoUrls);
+            while (newThumbnailsFound && scrollCount < 1) {
+                const currentScrollHeight = await page.evaluate(() => document.body.scrollHeight);
+                if (currentScrollHeight === prevScrollHeight) {
+                    newThumbnailsFound = false;
+                    continue;
+                }
+                await Josh.scrollPage(page);
+                prevScrollHeight = currentScrollHeight;
+                scrollCount++;
+
+                const thumbnailElements = await page.$$('.imgHolder.blur');
+                for (const thumbnailElement of thumbnailElements) {
+                    const videoUrl = await Josh.extractVideoUrl(page, url); // Pass the main URL to the extractVideoUrl function
+                    if (videoUrl && !videoLinks.has(videoUrl)) {
+                        videoLinks.add(videoUrl);
+                    }
+                }
+            }
+
+            console.log('Video Links:', Array.from(videoLinks)); // Convert Set to Array for logging and return
+            return Array.from(videoLinks);
         } catch (error) {
-            console.error('Error:', error);
+            console.error('Error during scraping:', error);
         } finally {
             await browser.close();
         }
     }
-
-    static async scrapeVideos(page) {
-        // Array to store video URLs
-        let videoUrls = [];
-
-        // Function to intercept network requests
-        await page.setRequestInterception(true);
-        page.on('request', interceptedRequest => {
-            if (interceptedRequest.url().includes('/v1.5/api/music/video/fresh')) {
-                interceptedRequest.continue();
-            } else {
-                interceptedRequest.abort();
-            }
-        });
-
-        // Function to handle intercepted responses and scrape video URLs
-        page.on('response', async response => {
-            if (response.url().includes('/v1.5/api/music/video/fresh')) {
-                const jsonData = await response.json();
-                const videos = jsonData.videos.map(video => video.short_url);
-                videoUrls.push(...videos);
-            }
-        });
-
-        // Navigate to next page if pagination exists
-        const nextButton = await page.$('.pagination a[aria-label="Next"]');
-        if (nextButton) {
-            await Promise.all([
-                page.waitForNavigation(),
-                page.click('.pagination a[aria-label="Next"]')
-            ]);
-            videoUrls.push(...await this.scrapeVideos(page));
-        }
-
-        return videoUrls;
-    }
 }
 
-module.exports = JoshScraper;
+module.exports = Josh;
 
-// Example usage
-JoshScraper.run();
+// Example usage:
+Josh.run('https://share.myjosh.in/audio/77762d66-99e6-4c15-b676-9b74e8c31501');
