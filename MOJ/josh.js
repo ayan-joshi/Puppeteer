@@ -1,96 +1,100 @@
 const puppeteer = require('puppeteer');
 
 class Josh {
-    static async launchBrowser() {
-        const browser = await puppeteer.launch({ headless: false });
-        return browser;
-    }
+  static async processRequest(page, songId, songName) {
+    page.setRequestInterception(true);
 
-    static async scrollPage(page) {
-        await page.evaluate(() => {
-            window.scrollBy(0, window.innerHeight);
-        });
-        await new Promise(resolve => setTimeout(resolve, 2000));
-    }
+    const dataArray = [];
+    let srNoCounter = 1;
 
-    static async extractVideoUrlFromThumbnail(page, thumbnailUrl) {
-        await page.setRequestInterception(true);
-        let videoUrl = null;
+    page.on('request', async (request) => {
+      const requestedUrl = request.url();
 
-        const requestHandler = async (request) => {
-            const requestUrl = request.url();
-            if (requestUrl.includes('/content/')) {
-                try {
-                    const response = await request.continue();
-                    const redirectUrl = response.headers().location;
-                    if (redirectUrl) {
-                        videoUrl = redirectUrl;
-                    }
-                } catch (error) {
-                    console.error('Error handling request:', error);
-                }
-            } else {
-                request.continue();
-            }
-        };
+      // Continue with the request
+      request.continue();
+    });
 
-        page.on('request', requestHandler);
-
+    page.on('response', async (response) => {
+      const requestedUrl = await response.request().url();
+      if (response.status() === 200 && requestedUrl.endsWith('apiwbody')) {
+        const responseBody = await response.text();
         try {
-            await page.goto(thumbnailUrl, { waitUntil: 'networkidle2' });
-        } catch (error) {
-            console.error('Error navigating to thumbnail:', error);
-        }
+          const jsonData = JSON.parse(responseBody);
+          
 
-        page.off('request', requestHandler);
-        await page.setRequestInterception(false);
-
-        return videoUrl;
-    }
-
-    static async run(url) {
-        const browser = await Josh.launchBrowser();
-        const page = await browser.newPage();
-
-        try {
-            await page.goto(url, { waitUntil: 'networkidle2' });
-
-            let prevScrollHeight = 0;
-            let newThumbnailsFound = true;
-            let scrollCount = 0;
-            const videoLinks = [];
-
-            while (newThumbnailsFound && scrollCount < 2) {
-                const currentScrollHeight = await page.evaluate(() => document.body.scrollHeight);
-                if (currentScrollHeight === prevScrollHeight) {
-                    newThumbnailsFound = false;
-                    continue;
-                }
-                await Josh.scrollPage(page);
-                prevScrollHeight = currentScrollHeight;
-                scrollCount++;
+          if (jsonData.data && Array.isArray(jsonData.data)) {
+            for (const item of jsonData.data) {
+              if (item.share_url) {
+                dataArray.push({
+                  sr_no: srNoCounter++,
+                  song_name: songName,
+                  video_link: item.share_url,
+                  song_url: songId,
+                  label: 'Hungama',
+                  date: Josh.getFirstDateOfMonth(),
+                  analyst: 'bot',
+                  app_name: 'Josh',
+                });
+              }
             }
-
-            const thumbnailUrls = await page.$$eval('img[src*="stream.myjosh.in"]', imgs => imgs.map(img => img.src));
-
-            for (const thumbnailUrl of thumbnailUrls) {
-                const videoUrl = await Josh.extractVideoUrlFromThumbnail(page, thumbnailUrl);
-                if (videoUrl) {
-                    videoLinks.push(videoUrl);
-                }
-            }
-
-            console.log('Video Links:', videoLinks);
-            return videoLinks;
+          }
         } catch (error) {
-            console.error('Error during scraping:', error);
-        } finally {
-            await browser.close();
+          console.error('Error parsing JSON response:', error);
         }
+      }
+    });
+
+    return dataArray;
+  }
+
+  static async simulateScrolling(page) {
+    let previousHeight;
+    while (true) {
+      const newHeight = await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+        return document.body.scrollHeight;
+      });
+
+      if (newHeight === previousHeight) {
+        break; 
+      }
+
+      previousHeight = newHeight;
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for 1 second after each scroll
     }
+  }
+
+  static getFirstDateOfMonth() {
+    const currentDate = new Date();
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1; 
+    const formattedMonth = month < 10 ? `0${month}` : month; 
+    const formattedDate = `${year}-${formattedMonth}-01`;
+    return formattedDate;
+  }
+
+  static async run(songId, songName) {
+    const browser = await puppeteer.launch();
+    const page = await browser.newPage();
+
+    try {
+      await page.goto(songId, { timeout: 600000 });
+
+      const dataArray = await Josh.processRequest(page, songId, songName); // Pass songName to processRequest
+
+      await Josh.simulateScrolling(page);
+
+      await browser.close();
+
+      // return dataArray;
+      console.log('Processed Data Array:', dataArray);
+    } catch (error) {
+      console.error('Error:', error);
+      await browser.close(); // Close the browser in case of an error
+    }
+  }
 }
 
 module.exports = Josh;
 
-// Example usage:
-Josh.run('https://share.myjosh.in/audio/77762d66-99e6-4c15-b676-9b74e8c31501');
+Josh.run('https://share.myjosh.in/audio/cce708df-6f47-456a-b1af-a80c80554363', 'Phsychic');
