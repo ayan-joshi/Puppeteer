@@ -1,7 +1,7 @@
 const puppeteer = require('puppeteer');
 
 class Josh {
-  static async processRequest(page, songId, songName) {
+  static async processRequest(page, audioLink, songName, label) {
     page.setRequestInterception(true);
 
     const dataArray = [];
@@ -21,7 +21,6 @@ class Josh {
         try {
           const jsonData = JSON.parse(responseBody);
           
-
           if (jsonData.data && Array.isArray(jsonData.data)) {
             for (const item of jsonData.data) {
               if (item.share_url) {
@@ -29,8 +28,8 @@ class Josh {
                   sr_no: srNoCounter++,
                   song_name: songName,
                   video_link: item.share_url,
-                  song_url: songId,
-                  label: 'Hungama',
+                  audio_link: audioLink,
+                  label: label,
                   date: Josh.getFirstDateOfMonth(),
                   analyst: 'bot',
                   app_name: 'Josh',
@@ -73,28 +72,29 @@ class Josh {
     return formattedDate;
   }
 
-  static async run(songId, songName) {
+  static async run(songName, audioLink, label) {
     const browser = await puppeteer.launch();
     const page = await browser.newPage();
 
     try {
-      await page.goto(songId, { timeout: 600000 });
+      await page.goto(audioLink, { timeout: 600000 });
 
-      const dataArray = await Josh.processRequest(page, songId, songName); // Pass songName to processRequest
+      const dataArray = await Josh.processRequest(page, audioLink, songName, label);
 
       await Josh.simulateScrolling(page);
 
       await browser.close();
 
-      // return dataArray;
-      console.log('Processed Data Array:', dataArray);
+      // console.log('Processed Data Array:', dataArray);
+      return dataArray;
     } catch (error) {
       console.error('Error:', error);
-      await browser.close(); // Close the browser in case of an error
+      await browser.close();
     }
   }
 }
 
 module.exports = Josh;
 
-Josh.run('https://share.myjosh.in/audio/cce708df-6f47-456a-b1af-a80c80554363', 'Phsychic');
+// Example usage:
+Josh.run('Phsychic','https://share.myjosh.in/audio/cce708df-6f47-456a-b1af-a80c80554363','Hungama');

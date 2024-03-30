@@ -1,84 +1,95 @@
-var https = require('follow-redirects').https;
-var fs = require('fs');
+const https = require('follow-redirects').https;
 
-// Function to fetch data for a given page
-function fetchDataForPage(page) {
-    var options = {
-        'method': 'GET',
-        'hostname': 'social.triller.co',
-        'path': `/v1.5/api/music/video/fresh?page=${page}&song_id=6ac26199-cd40-4f7d-b504-3fff7df4cafe&limit=50`,
-        'headers': {},
-        'maxRedirects': 20
-    };
+class Triller {
 
-    var req = https.request(options, function (res) {
-        console.log('Response status code:', res.statusCode);
+    static async run(songName, audioLink, label) {
+        let songId = await this.getSongId(audioLink);
+        let pageNo = 1;
+        let flag = true;
+        let videoUrls = [];
+        let srNoCounter = 1;
 
-        var chunks = [];
-
-        res.on("data", function (chunk) {
-            chunks.push(chunk);
-        });
-
-        res.on("end", function (chunk) {
-            var body = Buffer.concat(chunks);
-            try {
-                var jsonData = JSON.parse(body.toString());
-                processData(jsonData, page);
-            } catch (error) {
-                console.error('Error parsing JSON:', error);
-                console.log('Response body:', body.toString());
+        while (flag) {
+            let resResultJson = await this.apiCall(pageNo, songId);
+            if (resResultJson.length === 0) {
+                flag = false;
+            } else {
+                const videos = resResultJson.map(async video => {
+                    return {
+                        sr_no: srNoCounter++,
+                        song_name: songName,
+                        video_link: video.short_url,
+                        audio_link: audioLink,
+                        label: label,
+                        date: this.getFirstDateOfMonth(),
+                        analyst: 'bot',
+                        app_name: 'triller'
+                    };
+                });
+                videoUrls.push(...await Promise.all(videos));
+                pageNo++;
             }
-        });
-
-        res.on("error", function (error) {
-            console.error('Error:', error);
-        });
-    });
-
-    req.end();
-}
-
-// Function to process fetched data
-function processData(data, page) {
-    const users = data.users;
-    const videos = data.videos;
-    const outputData = {};
-
-    // Fetch video_uuid for each user
-    Object.keys(users).forEach(userId => {
-        const user = users[userId];
-        const username = user.username;
-
-        const userVideos = videos.filter(video => video.user_id === parseInt(userId));
-        const userVideoUuids = userVideos.map(video => video.video_uuid);
-
-        outputData[username] = userVideoUuids;
-    });
-
-    // Create video URLs and update outputData
-    Object.keys(outputData).forEach(username => {
-        outputData[username] = outputData[username].map(videoUuid => {
-            return `https://triller.co/@${username}/video/${videoUuid}`;
-        });
-    });
-
-    // Stringify the outputData
-    const outputJson = JSON.stringify(outputData, null, 2);
-
-    // Write to output.json with page number header
-    if (page === 1) {
-        // If it's the first page, overwrite the file
-        fs.writeFileSync('output.json', `Page ${page}:\n${outputJson}\n\n`);
-    } else {
-        // If it's not the first page, append to the file
-        fs.appendFileSync('output.json', `\nPage ${page}:\n${outputJson}\n\n`);
+        }
+        console.log('Video URLs:', videoUrls);
+        return videoUrls;
     }
 
-    console.log(`Data for page ${page} stored in output.json`);
+    static async getSongId(audioLink) {
+        const regex = /tracks\/([^\/]+)/;
+        const match = audioLink.match(regex);
+        if (match) {
+            return match[1];
+        } else {
+            throw new Error('Invalid audio link format');
+        }
+    }
+
+    static async apiCall(pageNo, songId) {
+        let body = await new Promise((resolve, reject) => {
+            let options = {
+                'method': 'GET',
+                'hostname': 'social.triller.co',
+                'path': `/v1.5/api/music/video/fresh?page=${pageNo}&song_id=${songId}&limit=50`,
+                'headers': {},
+                'maxRedirects': 20
+            };
+
+            let req = https.request(options, function (res) {
+                let chunks = [];
+
+                res.on("data", function (chunk) {
+                    chunks.push(chunk);
+                });
+
+                res.on("end", function () {
+                    const body = Buffer.concat(chunks).toString();
+                    const jsonData = JSON.parse(body);
+                    resolve(jsonData.videos);
+                });
+
+                res.on("error", function (error) {
+                    reject(error);
+                });
+            });
+
+            req.end();
+        });
+
+        return body;
+    }
+
+    static getFirstDateOfMonth() {
+        const currentDate = new Date();
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth() + 1; // Adding 1 since getMonth() returns zero-based months
+        const formattedMonth = month < 10 ? `0${month}` : month; // Add leading zero if month is single digit
+        const formattedDate = `${year}-${formattedMonth}-01`;
+        return formattedDate;
+    }
+    
 }
 
-// Fetch data for pages 1 to 5
-for (let page = 1; page <= 100; page++) {
-    fetchDataForPage(page);
-}
+module.exports = Triller;
+
+// Example usage
+// Triller.run('Blessed',  'https://triller.co/tracks/6ac26199-cd40-4f7d-b504-3fff7df4cafe', 'Sony Music');

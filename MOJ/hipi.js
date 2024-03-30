@@ -1,58 +1,95 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
-async function scrape(url) {
-    const browser = await puppeteer.launch({ headless: false });
-    const page = await browser.newPage();
+class Hipi {
+    static async launchBrowser() {
+        const browser = await puppeteer.launch({ headless: false });
+        return browser;
+    }
 
-    // Navigate to the page
-    await page.goto(url, { waitUntil: 'networkidle2' });
-
-    // Function to scroll the page
-    const scrollPage = async () => {
+    static async scrollPage(page) {
         await page.evaluate(() => {
-            window.scrollBy(0, window.innerHeight); // Scroll down by window height
+            window.scrollBy(0, window.innerHeight);
         });
-    };
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
 
-    // Keep track of previous scroll height to detect when we've reached the bottom
-    let prevScrollHeight = 0;
+    static async scrapeVideoData(page, songName, audioLink, label) {
+        try {
+            const data = [];
+            const videoElements = await page.$$('a[href*="single-video"]');
+            let srNo = 1; // Start from 1 for sr_no
 
-    try {
-        while (true) {
-            // Scroll the page
-            await scrollPage();
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
-            // Get the current scroll height
-            const currentScrollHeight = await page.evaluate(() => document.body.scrollHeight);
-            // Check if we've reached the bottom of the page
-            if (currentScrollHeight === prevScrollHeight) {
-                break; // Stop scrolling if no additional content is loaded
+            for (const videoElement of videoElements) {
+                const url = await videoElement.evaluate(el => el.href);
+
+                // Construct the video data object
+                const videoData = {
+                    sr_no: srNo++,
+                    song_name: songName,
+                    video_link: url,
+                    audio_link: audioLink,
+                    label: label,
+                    date: this.getFirstDateOfMonth(),
+                    analyst: 'bot',
+                    app_name: 'hipi'
+                };
+                data.push(videoData);
             }
-            // Update the previous scroll height
-            prevScrollHeight = currentScrollHeight;
+
+            return data; // Return the scraped data
+        } catch (error) {
+            console.error('Error during scraping:', error);
+            throw error;
         }
+    }
 
-        // Scrape video URLs
-        const videoUrls = await page.evaluate(() => {
-            const urls = [];
-            const videoElements = document.querySelectorAll('a[href*="single-video"]');
-            videoElements.forEach(video => {
-                urls.push(video.href);
-            });
-            return urls;
-        });
-        console.log('Video URLs:', videoUrls);
+    static getFirstDateOfMonth() {
+        const currentDate = new Date();
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth() + 1; // Adding 1 since getMonth() returns zero-based months
+        const formattedMonth = month < 10 ? `0${month}` : month; // Add leading zero if month is single digit
+        const formattedDate = `${year}-${formattedMonth}-01`;
+        return formattedDate;
+    }
 
-        // Write video URLs to a JSON file
-        fs.writeFileSync('output1.json', JSON.stringify(videoUrls, null, 2));
-        console.log('Video URLs saved to output1.json');
-    } catch (error) {
-        console.error('Error during scraping:', error);
-    } finally {
-        await browser.close(); // Close the browser
+    static async run(songName, audioLink, label) {
+        const browser = await Hipi.launchBrowser();
+        const page = await browser.newPage();
+
+        try {
+            await page.goto(audioLink, { waitUntil: 'networkidle2' });
+
+            let prevScrollHeight = 0;
+            let scrollCount = 0;
+
+            while (scrollCount < 1000) {
+                const currentScrollHeight = await page.evaluate(() => document.body.scrollHeight);
+                if (currentScrollHeight === prevScrollHeight) {
+                    break; // Exit the loop if the scroll height hasn't changed
+                }
+                await Hipi.scrollPage(page);
+                prevScrollHeight = currentScrollHeight;
+                scrollCount++;
+            }
+
+            const videoData = await Hipi.scrapeVideoData(page, songName, audioLink, label);
+            // console.log('Video Data:', videoData);
+
+            return videoData; // Return the scraped data from run method
+        } catch (error) {
+            console.error('Error during scraping:', error);
+        } finally {
+            await browser.close();
+        }
     }
 }
 
-// Call the scrape function with the URL
-scrape('https://www.hipi.co.in/sound/27d62c5f-609d-4b85-b8f7-8593da3ca112');
+module.exports = Hipi;
+
+// Example usage:
+Hipi.run(
+  'Yaar Hoon Tera',
+  'https://www.hipi.co.in/sound/545dad77-045f-4b60-b33e-11d89a9012e7',
+  'Tseries'
+);
