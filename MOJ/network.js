@@ -25,7 +25,7 @@ class Josh {
           if (jsonData.data && Array.isArray(jsonData.data)) {
             for (const item of jsonData.data) {
               if (item.share_url) {
-                let songName = ''; // Variable to store the song name
+                let songName = ''; 
                 if (item.album_info && item.album_info.name) {
                   songName = item.album_info.name;
                 }
